@@ -1,2 +1,0 @@
-# kubernetes_dashboard
-kubernetes_dashboard
