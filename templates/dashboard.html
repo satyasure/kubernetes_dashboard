@@ -1,0 +1,1084 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kubernetes Namespace Contact Manager</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://cdn.datatables.net/1.11.5/css/dataTables.bootstrap5.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #326ce5;
+            --success-color: #28a745;
+            --warning-color: #ffc107;
+            --danger-color: #dc3545;
+        }
+        
+        body {
+            background-color: #f4f6f9;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        .navbar {
+            background: linear-gradient(135deg, var(--primary-color) 0%, #1a4bc4 100%);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .sidebar {
+            position: fixed;
+            top: 56px;
+            bottom: 0;
+            left: 0;
+            z-index: 100;
+            padding: 48px 0 0;
+            box-shadow: inset -1px 0 0 rgba(0,0,0,.1);
+            background-color: white;
+        }
+        
+        .sidebar-sticky {
+            position: relative;
+            top: 0;
+            height: calc(100vh - 56px);
+            padding-top: .5rem;
+            overflow-x: hidden;
+            overflow-y: auto;
+        }
+        
+        .main-content {
+            margin-left: 250px;
+            padding: 20px;
+        }
+        
+        .card {
+            border: none;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.05);
+            margin-bottom: 20px;
+        }
+        
+        .card-header {
+            background-color: white;
+            border-bottom: 1px solid #e3e6f0;
+            padding: 15px 20px;
+            font-weight: 600;
+        }
+        
+        .stats-card {
+            background: linear-gradient(135deg, var(--primary-color) 0%, #1a4bc4 100%);
+            color: white;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .stats-card h3 {
+            font-size: 2rem;
+            margin-bottom: 0;
+        }
+        
+        .btn-action {
+            margin: 0 2px;
+        }
+        
+        .modal-lg {
+            max-width: 800px;
+        }
+        
+        .contact-badge {
+            padding: 3px 8px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+        
+        .badge-configured {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        
+        .badge-missing {
+            background-color: #fff3cd;
+            color: #856404;
+        }
+        
+        .filter-section {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 9999;
+            display: none;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .loading-spinner {
+            width: 50px;
+            height: 50px;
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid var(--primary-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .nav-link.active {
+            background-color: var(--primary-color);
+            color: white !important;
+        }
+        
+        @media (max-width: 768px) {
+            .sidebar {
+                display: none;
+            }
+            .main-content {
+                margin-left: 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-dark sticky-top">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="#">
+                <i class="fas fa-kubernetes"></i> K8s Contact Manager
+            </a>
+            <div class="d-flex align-items-center">
+                <span class="text-white me-3">
+                    <i class="fas fa-user"></i> <span id="current-user">{{ session.username }}</span>
+                </span>
+                <button class="btn btn-light btn-sm" onclick="performBulkSync()">
+                    <i class="fas fa-sync"></i> Sync All
+                </button>
+                <a href="/logout" class="btn btn-outline-light btn-sm ms-2">
+                    <i class="fas fa-sign-out-alt"></i> Logout
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="sidebar">
+        <div class="sidebar-sticky">
+            <ul class="nav flex-column">
+                <li class="nav-item">
+                    <a class="nav-link active" href="#" onclick="showSection('dashboard')">
+                        <i class="fas fa-tachometer-alt"></i> Dashboard
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="#" onclick="showSection('namespaces')">
+                        <i class="fas fa-cubes"></i> Namespaces
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="#" onclick="showSection('history')">
+                        <i class="fas fa-history"></i> History
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="#" onclick="showSection('audit')">
+                        <i class="fas fa-list-alt"></i> Audit Logs
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="#" onclick="showSection('clusters')">
+                        <i class="fas fa-server"></i> Clusters
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="#" onclick="showSection('reports')">
+                        <i class="fas fa-chart-bar"></i> Reports
+                    </a>
+                </li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="main-content">
+        <!-- Dashboard Section -->
+        <div id="dashboardSection">
+            <div class="row">
+                <div class="col-md-3">
+                    <div class="stats-card">
+                        <i class="fas fa-cubes fa-2x mb-2"></i>
+                        <h3 id="totalNamespaces">-</h3>
+                        <p>Total Namespaces</p>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="stats-card" style="background: linear-gradient(135deg, #28a745 0%, #1e7e34 100%);">
+                        <i class="fas fa-check-circle fa-2x mb-2"></i>
+                        <h3 id="configuredNamespaces">-</h3>
+                        <p>Configured Namespaces</p>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="stats-card" style="background: linear-gradient(135deg, #ffc107 0%, #d39e00 100%);">
+                        <i class="fas fa-exclamation-triangle fa-2x mb-2"></i>
+                        <h3 id="missingNamespaces">-</h3>
+                        <p>Missing Contact Info</p>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="stats-card" style="background: linear-gradient(135deg, #17a2b8 0%, #117a8b 100%);">
+                        <i class="fas fa-users fa-2x mb-2"></i>
+                        <h3 id="totalTeams">-</h3>
+                        <p>Unique Teams</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <i class="fas fa-chart-line"></i> Recent Activity
+                </div>
+                <div class="card-body">
+                    <canvas id="activityChart" height="100"></canvas>
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <i class="fas fa-clock"></i> Recent Updates
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table id="recentUpdatesTable" class="table table-sm">
+                            <thead>
+                                <tr><th>Timestamp</th><th>Namespace</th><th>Action</th><th>User</th></tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Namespaces Section -->
+        <div id="namespacesSection" style="display: none;">
+            <div class="filter-section">
+                <div class="row">
+                    <div class="col-md-4">
+                        <input type="text" id="searchInput" class="form-control" placeholder="Search namespaces...">
+                    </div>
+                    <div class="col-md-3">
+                        <select id="clusterFilter" class="form-select">
+                            <option value="">All Clusters</option>
+                            {% for cluster in clusters %}
+                            <option value="{{ cluster.id }}">{{ cluster.display_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <select id="statusFilter" class="form-select">
+                            <option value="">All Status</option>
+                            <option value="configured">Configured</option>
+                            <option value="missing">Missing Contact</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <button class="btn btn-primary w-100" onclick="loadNamespaces()">
+                            <i class="fas fa-search"></i> Filter
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <i class="fas fa-cubes"></i> Namespace Contacts
+                    <button class="btn btn-sm btn-success float-end" onclick="exportData()">
+                        <i class="fas fa-download"></i> Export
+                    </button>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table id="namespacesTable" class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Cluster</th><th>Namespace</th><th>Owner</th><th>Email</th>
+                                    <th>Team</th><th>Slack</th><th>Status</th><th>Last Updated</th><th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- History Section -->
+        <div id="historySection" style="display: none;">
+            <div class="card">
+                <div class="card-header">
+                    <i class="fas fa-history"></i> Change History
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table id="historyTable" class="table table-sm">
+                            <thead>
+                                <tr><th>Timestamp</th><th>Cluster</th><th>Namespace</th><th>Change Type</th><th>Changed By</th><th>Details</th></tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Audit Section -->
+        <div id="auditSection" style="display: none;">
+            <div class="card">
+                <div class="card-header">
+                    <i class="fas fa-list-alt"></i> Audit Logs
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table id="auditTable" class="table table-sm">
+                            <thead>
+                                <tr><th>Timestamp</th><th>Action</th><th>Cluster</th><th>Namespace</th><th>User</th><th>IP Address</th></tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Clusters Section -->
+        <div id="clustersSection" style="display: none;">
+            <div class="card">
+                <div class="card-header">
+                    <i class="fas fa-server"></i> Clusters
+                    <button class="btn btn-sm btn-primary float-end" onclick="showAddClusterModal()">
+                        <i class="fas fa-plus"></i> Add Cluster
+                    </button>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table id="clustersTable" class="table">
+                            <thead>
+                                <tr><th>Name</th><th>Display Name</th><th>Context</th><th>Status</th><th>Actions</th></tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Reports Section -->
+        <div id="reportsSection" style="display: none;">
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header">Owner Distribution</div>
+                        <div class="card-body">
+                            <canvas id="ownerChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header">Team Distribution</div>
+                        <div class="card-body">
+                            <canvas id="teamChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Contact Modal -->
+    <div class="modal fade" id="editContactModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Edit Contact Information</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="contactForm">
+                        <input type="hidden" id="editClusterName" name="cluster_name">
+                        <input type="hidden" id="editNamespace" name="namespace">
+                        
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Owner Name *</label>
+                                <input type="text" class="form-control" id="ownerName" name="owner_name" required>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Owner Email *</label>
+                                <input type="email" class="form-control" id="ownerEmail" name="owner_email" required>
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Team Name</label>
+                                <input type="text" class="form-control" id="teamName" name="team_name">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Slack Channel</label>
+                                <input type="text" class="form-control" id="slackChannel" name="slack_channel" placeholder="#team-channel">
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Oncall Rotation</label>
+                                <input type="text" class="form-control" id="oncallRotation" name="oncall_rotation">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Backup Owner Name</label>
+                                <input type="text" class="form-control" id="backupOwnerName" name="backup_owner_name">
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Backup Owner Email</label>
+                                <input type="email" class="form-control" id="backupOwnerEmail" name="backup_owner_email">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Jira Project</label>
+                                <input type="text" class="form-control" id="jiraProject" name="jira_project">
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Confluence Space</label>
+                                <input type="text" class="form-control" id="confluenceSpace" name="confluence_space">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <div class="form-check mt-4">
+                                    <input class="form-check-input" type="checkbox" id="syncToK8s" name="sync_to_k8s" checked>
+                                    <label class="form-check-label">Sync to Kubernetes</label>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Additional Notes</label>
+                            <textarea class="form-control" id="additionalNotes" name="additional_notes" rows="3"></textarea>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="saveContact()">Save Changes</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Cluster Modal -->
+    <div class="modal fade" id="addClusterModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add New Cluster</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="clusterForm">
+                        <div class="mb-3">
+                            <label class="form-label">Cluster Name *</label>
+                            <input type="text" class="form-control" id="clusterName" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Display Name *</label>
+                            <input type="text" class="form-control" id="clusterDisplayName" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Kubeconfig Context</label>
+                            <input type="text" class="form-control" id="clusterContext">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">API Endpoint</label>
+                            <input type="url" class="form-control" id="clusterEndpoint">
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="addCluster()">Add Cluster</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-spinner"></div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.datatables.net/1.11.5/js/dataTables.bootstrap5.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <script>
+        let namespacesTable, historyTable, auditTable, clustersTable;
+        let activityChart, ownerChart, teamChart;
+        
+        // Show/Hide sections
+        function showSection(section) {
+            $('#dashboardSection, #namespacesSection, #historySection, #auditSection, #clustersSection, #reportsSection').hide();
+            $(`#${section}Section`).show();
+            
+            if (section === 'dashboard') {
+                loadDashboard();
+            } else if (section === 'namespaces') {
+                loadNamespaces();
+            } else if (section === 'history') {
+                loadHistory();
+            } else if (section === 'audit') {
+                loadAudit();
+            } else if (section === 'clusters') {
+                loadClusters();
+            } else if (section === 'reports') {
+                loadReports();
+            }
+        }
+        
+        // Dashboard functions
+        async function loadDashboard() {
+            showLoading();
+            try {
+                const namespaces = await apiGet('/api/namespaces');
+                const total = namespaces.length;
+                const configured = namespaces.filter(ns => ns.has_contact).length;
+                const missing = total - configured;
+                const teams = [...new Set(namespaces.map(ns => ns.team_name).filter(t => t))];
+                
+                $('#totalNamespaces').text(total);
+                $('#configuredNamespaces').text(configured);
+                $('#missingNamespaces').text(missing);
+                $('#totalTeams').text(teams.length);
+                
+                // Load recent updates
+                const history = await apiGet('/api/history?limit=10');
+                const tbody = $('#recentUpdatesTable tbody');
+                tbody.empty();
+                history.forEach(h => {
+                    tbody.append(`
+                        <tr>
+                            <td>${new Date(h.changed_at).toLocaleString()}</td>
+                            <td>${h.namespace}</td>
+                            <td><span class="badge bg-${getChangeTypeColor(h.change_type)}">${h.change_type}</span></td>
+                            <td>${h.changed_by}</td>
+                        </tr>
+                    `);
+                });
+                
+                // Create activity chart
+                if (activityChart) activityChart.destroy();
+                const ctx = document.getElementById('activityChart').getContext('2d');
+                activityChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: getLast7Days(),
+                        datasets: [{
+                            label: 'Updates',
+                            data: await getActivityData(),
+                            borderColor: '#326ce5',
+                            tension: 0.1
+                        }]
+                    }
+                });
+            } catch (error) {
+                console.error('Error loading dashboard:', error);
+            }
+            hideLoading();
+        }
+        
+        // Namespace functions
+        async function loadNamespaces() {
+            showLoading();
+            try {
+                const search = $('#searchInput').val();
+                const clusterId = $('#clusterFilter').val();
+                const status = $('#statusFilter').val();
+                
+                let url = '/api/namespaces?';
+                if (search) url += `search=${search}&`;
+                if (clusterId) url += `cluster_id=${clusterId}&`;
+                if (status === 'configured') url += 'has_contact_only=true&';
+                
+                const namespaces = await apiGet(url);
+                
+                if (namespacesTable) {
+                    namespacesTable.clear().destroy();
+                }
+                
+                const tbody = $('#namespacesTable tbody');
+                tbody.empty();
+                
+                namespaces.forEach(ns => {
+                    const statusBadge = ns.has_contact ? 
+                        '<span class="contact-badge badge-configured">Configured</span>' : 
+                        '<span class="contact-badge badge-missing">Missing</span>';
+                    
+                    tbody.append(`
+                        <tr>
+                            <td>${ns.cluster_name || ns.cluster?.name || 'N/A'}</td>
+                            <td><strong>${ns.namespace}</strong></td>
+                            <td>${ns.owner_name || '-'}</td>
+                            <td>${ns.owner_email ? `<a href="mailto:${ns.owner_email}">${ns.owner_email}</a>` : '-'}</td>
+                            <td>${ns.team_name || '-'}</td>
+                            <td>${ns.slack_channel || '-'}</td>
+                            <td>${statusBadge}</td>
+                            <td>${ns.updated_at ? new Date(ns.updated_at).toLocaleDateString() : '-'}</td>
+                            <td>
+                                <button class="btn btn-sm btn-primary btn-action" onclick="editContact('${ns.cluster_name}', '${ns.namespace}')">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                                <button class="btn btn-sm btn-danger btn-action" onclick="deleteContact('${ns.cluster_name}', '${ns.namespace}')">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                                <button class="btn btn-sm btn-info btn-action" onclick="syncNamespace('${ns.cluster_name}', '${ns.namespace}')">
+                                    <i class="fas fa-sync"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    `);
+                });
+                
+                namespacesTable = $('#namespacesTable').DataTable({
+                    pageLength: 25,
+                    order: [[1, 'asc']]
+                });
+            } catch (error) {
+                console.error('Error loading namespaces:', error);
+                alert('Failed to load namespaces');
+            }
+            hideLoading();
+        }
+        
+        async function editContact(clusterName, namespace) {
+            showLoading();
+            try {
+                const contact = await apiGet(`/api/namespace/${clusterName}/${namespace}`);
+                $('#editClusterName').val(clusterName);
+                $('#editNamespace').val(namespace);
+                $('#ownerName').val(contact.owner_name || '');
+                $('#ownerEmail').val(contact.owner_email || '');
+                $('#teamName').val(contact.team_name || '');
+                $('#slackChannel').val(contact.slack_channel || '');
+                $('#oncallRotation').val(contact.oncall_rotation || '');
+                $('#backupOwnerName').val(contact.backup_owner_name || '');
+                $('#backupOwnerEmail').val(contact.backup_owner_email || '');
+                $('#jiraProject').val(contact.jira_project || '');
+                $('#confluenceSpace').val(contact.confluence_space || '');
+                $('#additionalNotes').val(contact.additional_notes || '');
+                $('#syncToK8s').prop('checked', true);
+                
+                $('#editContactModal').modal('show');
+            } catch (error) {
+                console.error('Error loading contact:', error);
+                alert('Failed to load contact information');
+            }
+            hideLoading();
+        }
+        
+        async function saveContact() {
+            const formData = {
+                owner_name: $('#ownerName').val(),
+                owner_email: $('#ownerEmail').val(),
+                team_name: $('#teamName').val(),
+                slack_channel: $('#slackChannel').val(),
+                oncall_rotation: $('#oncallRotation').val(),
+                backup_owner_name: $('#backupOwnerName').val(),
+                backup_owner_email: $('#backupOwnerEmail').val(),
+                jira_project: $('#jiraProject').val(),
+                confluence_space: $('#confluenceSpace').val(),
+                additional_notes: $('#additionalNotes').val(),
+                sync_to_k8s: $('#syncToK8s').is(':checked')
+            };
+            
+            const clusterName = $('#editClusterName').val();
+            const namespace = $('#editNamespace').val();
+            
+            showLoading();
+            try {
+                await apiPost(`/api/namespace/${clusterName}/${namespace}`, formData);
+                alert('Contact information saved successfully!');
+                $('#editContactModal').modal('hide');
+                loadNamespaces();
+                loadDashboard();
+            } catch (error) {
+                console.error('Error saving contact:', error);
+                alert('Failed to save contact information');
+            }
+            hideLoading();
+        }
+        
+        async function deleteContact(clusterName, namespace) {
+            if (!confirm('Are you sure you want to delete the contact information for this namespace?')) {
+                return;
+            }
+            
+            showLoading();
+            try {
+                await apiDelete(`/api/namespace/${clusterName}/${namespace}`);
+                alert('Contact information deleted successfully!');
+                loadNamespaces();
+                loadDashboard();
+            } catch (error) {
+                console.error('Error deleting contact:', error);
+                alert('Failed to delete contact information');
+            }
+            hideLoading();
+        }
+        
+        async function syncNamespace(clusterName, namespace) {
+            showLoading();
+            try {
+                await apiPost(`/api/sync/namespace/${clusterName}/${namespace}`);
+                alert('Sync completed successfully!');
+                loadNamespaces();
+            } catch (error) {
+                console.error('Error syncing namespace:', error);
+                alert('Failed to sync namespace');
+            }
+            hideLoading();
+        }
+        
+        async function performBulkSync() {
+            if (!confirm('This will sync all namespaces from all clusters. This may take a while. Continue?')) {
+                return;
+            }
+            
+            showLoading();
+            try {
+                const result = await apiPost('/api/sync/bulk');
+                alert(`Sync completed! Success: ${result.success}, Failed: ${result.failed}, Total: ${result.total}`);
+                loadNamespaces();
+                loadDashboard();
+            } catch (error) {
+                console.error('Error during bulk sync:', error);
+                alert('Failed to perform bulk sync');
+            }
+            hideLoading();
+        }
+        
+        // History functions
+        async function loadHistory() {
+            showLoading();
+            try {
+                const history = await apiGet('/api/history?limit=100');
+                
+                if (historyTable) {
+                    historyTable.clear().destroy();
+                }
+                
+                const tbody = $('#historyTable tbody');
+                tbody.empty();
+                
+                history.forEach(h => {
+                    const details = h.change_type === 'UPDATE' ? 
+                        'Updated contact information' : 
+                        (h.change_type === 'CREATE' ? 'Created contact entry' : 'Deleted contact information');
+                    
+                    tbody.append(`
+                        <tr>
+                            <td>${new Date(h.changed_at).toLocaleString()}</td>
+                            <td>${h.cluster_name || 'N/A'}</td>
+                            <td>${h.namespace}</td>
+                            <td><span class="badge bg-${getChangeTypeColor(h.change_type)}">${h.change_type}</span></td>
+                            <td>${h.changed_by}</td>
+                            <td>${details}</td>
+                        </tr>
+                    `);
+                });
+                
+                historyTable = $('#historyTable').DataTable({
+                    pageLength: 25,
+                    order: [[0, 'desc']]
+                });
+            } catch (error) {
+                console.error('Error loading history:', error);
+            }
+            hideLoading();
+        }
+        
+        // Audit functions
+        async function loadAudit() {
+            showLoading();
+            try {
+                const audits = await apiGet('/api/audit?limit=200');
+                
+                if (auditTable) {
+                    auditTable.clear().destroy();
+                }
+                
+                const tbody = $('#auditTable tbody');
+                tbody.empty();
+                
+                audits.forEach(a => {
+                    tbody.append(`
+                        <tr>
+                            <td>${new Date(a.created_at).toLocaleString()}</td>
+                            <td><span class="badge bg-${getActionColor(a.action)}">${a.action}</span></td>
+                            <td>${a.cluster_name || 'N/A'}</td>
+                            <td>${a.namespace || 'N/A'}</td>
+                            <td>${a.performed_by}</td>
+                            <td>${a.ip_address || 'N/A'}</td>
+                        </tr>
+                    `);
+                });
+                
+                auditTable = $('#auditTable').DataTable({
+                    pageLength: 50,
+                    order: [[0, 'desc']]
+                });
+            } catch (error) {
+                console.error('Error loading audit logs:', error);
+            }
+            hideLoading();
+        }
+        
+        // Cluster functions
+        async function loadClusters() {
+            showLoading();
+            try {
+                const clusters = await apiGet('/api/clusters');
+                
+                if (clustersTable) {
+                    clustersTable.clear().destroy();
+                }
+                
+                const tbody = $('#clustersTable tbody');
+                tbody.empty();
+                
+                clusters.forEach(c => {
+                    tbody.append(`
+                        <tr>
+                            <td>${c.name}</td>
+                            <td>${c.display_name}</td>
+                            <td>${c.context || '-'}</td>
+                            <td><span class="badge bg-success">Active</span></td>
+                            <td>
+                                <button class="btn btn-sm btn-danger btn-action" onclick="deleteCluster(${c.id})">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    `);
+                });
+                
+                clustersTable = $('#clustersTable').DataTable();
+            } catch (error) {
+                console.error('Error loading clusters:', error);
+            }
+            hideLoading();
+        }
+        
+        async function addCluster() {
+            const data = {
+                name: $('#clusterName').val(),
+                display_name: $('#clusterDisplayName').val(),
+                context: $('#clusterContext').val(),
+                api_endpoint: $('#clusterEndpoint').val()
+            };
+            
+            if (!data.name || !data.display_name) {
+                alert('Cluster name and display name are required');
+                return;
+            }
+            
+            showLoading();
+            try {
+                await apiPost('/api/clusters', data);
+                alert('Cluster added successfully!');
+                $('#addClusterModal').modal('hide');
+                loadClusters();
+                $('#clusterForm')[0].reset();
+            } catch (error) {
+                console.error('Error adding cluster:', error);
+                alert('Failed to add cluster');
+            }
+            hideLoading();
+        }
+        
+        async function deleteCluster(clusterId) {
+            if (!confirm('Are you sure you want to delete this cluster?')) {
+                return;
+            }
+            
+            // Implement cluster deletion API endpoint as needed
+            alert('Cluster deletion not implemented in this demo');
+        }
+        
+        // Reports functions
+        async function loadReports() {
+            showLoading();
+            try {
+                const namespaces = await apiGet('/api/namespaces');
+                
+                // Owner distribution
+                const ownerCount = {};
+                namespaces.forEach(ns => {
+                    if (ns.owner_name) {
+                        ownerCount[ns.owner_name] = (ownerCount[ns.owner_name] || 0) + 1;
+                    }
+                });
+                
+                if (ownerChart) ownerChart.destroy();
+                const ownerCtx = document.getElementById('ownerChart').getContext('2d');
+                ownerChart = new Chart(ownerCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: Object.keys(ownerCount).slice(0, 10),
+                        datasets: [{
+                            label: 'Namespaces per Owner',
+                            data: Object.values(ownerCount).slice(0, 10),
+                            backgroundColor: '#326ce5'
+                        }]
+                    }
+                });
+                
+                // Team distribution
+                const teamCount = {};
+                namespaces.forEach(ns => {
+                    if (ns.team_name) {
+                        teamCount[ns.team_name] = (teamCount[ns.team_name] || 0) + 1;
+                    }
+                });
+                
+                if (teamChart) teamChart.destroy();
+                const teamCtx = document.getElementById('teamChart').getContext('2d');
+                teamChart = new Chart(teamCtx, {
+                    type: 'pie',
+                    data: {
+                        labels: Object.keys(teamCount).slice(0, 10),
+                        datasets: [{
+                            data: Object.values(teamCount).slice(0, 10),
+                            backgroundColor: ['#326ce5', '#28a745', '#ffc107', '#dc3545', '#17a2b8']
+                        }]
+                    }
+                });
+            } catch (error) {
+                console.error('Error loading reports:', error);
+            }
+            hideLoading();
+        }
+        
+        // Export function
+        async function exportData() {
+            showLoading();
+            try {
+                window.location.href = '/api/export';
+            } catch (error) {
+                console.error('Error exporting data:', error);
+                alert('Failed to export data');
+            }
+            hideLoading();
+        }
+        
+        // Helper functions
+        function showLoading() {
+            $('#loadingOverlay').show();
+        }
+        
+        function hideLoading() {
+            $('#loadingOverlay').hide();
+        }
+        
+        async function apiGet(url) {
+            const response = await fetch(url, {
+                headers: { 'X-User': $('#current-user').text() }
+            });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            return response.json();
+        }
+        
+        async function apiPost(url, data) {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-User': $('#current-user').text()
+                },
+                body: JSON.stringify(data)
+            });
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || `HTTP ${response.status}`);
+            }
+            return response.json();
+        }
+        
+        async function apiDelete(url) {
+            const response = await fetch(url, {
+                method: 'DELETE',
+                headers: { 'X-User': $('#current-user').text() }
+            });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            return response.json();
+        }
+        
+        function getChangeTypeColor(type) {
+            const colors = {
+                'CREATE': 'success',
+                'UPDATE': 'primary',
+                'DELETE': 'danger',
+                'SYNC': 'info'
+            };
+            return colors[type] || 'secondary';
+        }
+        
+        function getActionColor(action) {
+            const colors = {
+                'CREATE': 'success',
+                'UPDATE': 'primary',
+                'DELETE': 'danger',
+                'SYNC': 'info'
+            };
+            return colors[action] || 'secondary';
+        }
+        
+        function getLast7Days() {
+            const dates = [];
+            for (let i = 6; i >= 0; i--) {
+                const date = new Date();
+                date.setDate(date.getDate() - i);
+                dates.push(date.toLocaleDateString());
+            }
+            return dates;
+        }
+        
+        async function getActivityData() {
+            // This would fetch activity data from your API
+            // For demo, returning sample data
+            return [5, 8, 12, 7, 15, 10, 6];
+        }
+        
+        function showAddClusterModal() {
+            $('#addClusterModal').modal('show');
+        }
+        
+        // Initialize
+        $(document).ready(function() {
+            showSection('dashboard');
+        });
+    </script>
+</body>
+</html>
